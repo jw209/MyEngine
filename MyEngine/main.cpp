@@ -177,6 +177,8 @@ private:
         glfwDestroyWindow(window);
 
         glfwTerminate();
+
+        deleteCompiledShaders();
     }
 
     void createInstance() {
@@ -717,6 +719,22 @@ private:
 
         if (result != 0) {
             throw std::runtime_error("failed to compile shaders");
+        }
+    }
+
+    void deleteCompiledShaders() {
+        // Assuming your files are named 'file1.txt' and 'file2.txt'
+        const char* file1_path = "frag.spv";
+        const char* file2_path = "vert.spv";
+
+        // Your code continues here
+
+        // At the point where you want to delete the files
+        if (std::remove(file1_path) == 0 && std::remove(file2_path) == 0) {
+            std::cout << "Files " << file1_path << " and " << file2_path << " deleted successfully." << std::endl;
+        }
+        else {
+            std::perror("Error deleting files");
         }
     }
 
