@@ -23,8 +23,11 @@
 #include <optional>
 #include <set>
 
+#include "PerlinNoise.hpp"
+
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
+const uint32_t gridSize = 100;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -110,6 +113,23 @@ struct Vertex {
     }
 };
 
+int cameraVert = 0;
+int cameraHorz = 0;
+
+static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    cameraVert = cameraHorz = 0;
+
+    if (key == GLFW_KEY_W && action == GLFW_PRESS)
+        cameraVert = 1;
+    else if (key == GLFW_KEY_S && action == GLFW_PRESS)
+        cameraVert = -1;
+    else if (key == GLFW_KEY_A && action == GLFW_PRESS)
+        cameraHorz = -1;
+    else if (key == GLFW_KEY_D && action == GLFW_PRESS)
+        cameraHorz = 1;
+}
+
 struct UniformBufferObject {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
@@ -117,6 +137,7 @@ struct UniformBufferObject {
 };
 
 std::vector<Vertex> vertices;
+std::vector<float> heightMap;
 std::vector<uint16_t> indices;
 
 class MyEngine {
@@ -193,6 +214,8 @@ private:
         window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
         glfwSetWindowUserPointer(window, this);
         glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+
+        glfwSetKeyCallback(window, key_callback);
     }
 
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
@@ -201,7 +224,8 @@ private:
     }
 
     void initVulkan() {
-        generateGeometry(&vertices, &indices, 5);
+        generateHeightMap(&heightMap, gridSize);
+        generateGeometry(&vertices, &indices, gridSize);
         compileShaders();
         createInstance();
         setupDebugMessenger();
@@ -325,6 +349,24 @@ private:
         }
     }
 
+    void generateHeightMap(std::vector<float>* heightMap, int gridSize) {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<unsigned int> dis(0, std::numeric_limits<unsigned int>::max());
+        unsigned int randomUnsigned = dis(gen);
+        const siv::PerlinNoise::seed_type seed = randomUnsigned;
+
+        const siv::PerlinNoise perlin{ seed };
+
+        for (int x = 0; x < gridSize-1; x++) {
+            for (int y = 0; y < gridSize-1; y++) {
+                const double noise = perlin.octave2D_01((x * 0.01f), (y * 0.01f), 2);
+
+                heightMap->push_back(static_cast<float>(noise));
+            }
+        }
+    }
+
     void generateGeometry(std::vector<Vertex>* vertices, std::vector<uint16_t>* indices, int gridSize) {
         bool isGeneratingVertices = true;
         bool isGeneratingIndices = true;
@@ -341,12 +383,12 @@ private:
 
             if (x >= 1.0f && y >= 1.0f) {
                 isGeneratingVertices = false;
-                vertices->push_back({ {1.0f, 1.0f, z}, {col}, {x, y} });
+                vertices->push_back({ {1.0f, 1.0f, z}, {col}, {1.0f / step, 1.0f / step}});
             }
             else {
-                vertices->push_back({ {x, y, z}, {col}, {x, y} });
+                vertices->push_back({ {x / 1.0f, y / 1.0f, z / 1.0f}, {col}, {x / step, y / step}});
 
-                if (x >= 1.0f /* && y <= 1.0f*/) {
+                if (x >= 1.0f) {
                     yIndex++;
                     xIndex = 0;
                 }
@@ -354,10 +396,6 @@ private:
                     xIndex++;
                 }
             }
-        }
-
-        for (int i = 0; i < vertices->size(); i++) {
-            std::cout << "vertex[" << i << "] = (" << vertices->at(i).pos.x << ", " << vertices->at(i).pos.y << ")\n";
         }
 
         xIndex = 0;
@@ -380,10 +418,6 @@ private:
                     isGeneratingIndices = false;
                 }
             }
-        }
-
-        for (int i = 0; i < indices->size(); i++) {
-            std::cout << "index[" << i << "] = " << indices->at(i) << "\n";
         }
     }
 
@@ -884,7 +918,7 @@ private:
     void createTextureImage() {
         int texWidth, texHeight, texChannels;
         stbi_uc* pixels = stbi_load("albedo.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-        VkDeviceSize imageSize = texWidth * texHeight * 4;
+        VkDeviceSize imageSize = static_cast<uint64_t>(texWidth) * texHeight * 4;
 
         if (!pixels) {
             throw std::runtime_error("failed to load texture image!");
@@ -1359,14 +1393,14 @@ private:
     }
 
     void updateUniformBuffer(uint32_t currentImage) {
-        static auto startTime = std::chrono::high_resolution_clock::now();
+        //static auto startTime = std::chrono::high_resolution_clock::now();
 
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+        //auto currentTime = std::chrono::high_resolution_clock::now();
+        //float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(10.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.view = glm::lookAt(glm::vec3(3.0f, 3.0f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(45.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.view = glm::lookAt(glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.5f, 0.5f, 0.5f), glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
         ubo.proj[1][1] *= -1;
 
